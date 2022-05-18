@@ -1,0 +1,105 @@
+import torch
+import torch.utils.data as data
+from torchvision import datasets
+from torchvision.transforms import ToTensor
+import torch.nn as nn
+import torch.nn.functional as F
+
+training_data = datasets.FashionMNIST(
+    root="data",
+    train=True,
+    download=True,
+    transform=ToTensor()
+)
+
+test_data = datasets.FashionMNIST(
+    root="data",
+    train=False,
+    download=True,
+    transform=ToTensor()
+)
+
+
+# labels_map = {
+#     0: "T-Shirt",
+#     1: "Trouser",
+#     2: "Pullover",
+#     3: "Dress",
+#     4: "Coat",
+#     5: "Sandal",
+#     6: "Shirt",
+#     7: "Sneaker",
+#     8: "Bag",
+#     9: "Ankle Boot",
+# }
+# figure = plt.figure(figsize=(8, 8))
+# cols, rows = 3, 3
+# for i in range(1, cols * rows + 1):
+#     sample_idx = torch.randint(len(training_data), size=(1,)).item()
+#     img, label = training_data[sample_idx]
+#     figure.add_subplot(rows, cols, i)
+#     plt.title(labels_map[label])
+#     plt.axis("off")
+#     plt.imshow(img.squeeze(), cmap="gray")
+# plt.show()
+#
+
+class ClothClassifier(nn.Module):
+    def __init__(self):
+        super(ClothClassifier, self).__init__()
+        self.act1 = nn.Linear(28 * 28, 112)
+        self.act2 = nn.LeakyReLU()
+        self.act3 = nn.Linear(112, 56)
+        self.act4 = nn.LeakyReLU()
+        self.act5 = nn.Linear(56, 10)
+
+    def forward(self, target):
+        target = target.view(target.shape[0], -1)
+        target = self.act1(target)
+        target = self.act2(target)
+        target = self.act3(target)
+        target = self.act4(target)
+        target = self.act5(target)
+        return target
+
+
+if __name__ == '__main__':
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    dataloader = data.DataLoader(training_data, batch_size=64, shuffle=True, drop_last=False)
+
+    cloth_classifier = ClothClassifier()
+    cloth_classifier.to(device)
+    cloth_classifier.train()
+    optimizer = torch.optim.SGD(cloth_classifier.parameters(), lr=0.1)
+    loss_module = nn.BCELoss()
+
+    epoches = 50
+    for epoch in range(epoches):
+        correct_num = 0
+        total_num = 0
+        for x, y in dataloader:
+            optimizer.zero_grad()
+            x = x.to(device)
+            z = torch.zeros(size=(y.shape[0], 10), dtype=torch.float32)
+            for idx in range(y.shape[0]):
+                z[idx, y[idx]] = 1.0
+
+            z = z.to(device)
+            predict = cloth_classifier(x)
+            predict = F.softmax(predict, dim=0)
+
+            loss = loss_module(predict, z)
+            loss.backward()
+            optimizer.step()
+
+            correct_list = (predict.argmax(dim=1)).to('cpu')
+            correct_num += (correct_list == y).sum()
+            total_num += y.shape[0]
+
+        print(epoch, "-th epoch")
+        print("acc : ", correct_num/total_num)
+
+
+    cloth_classifier_parameters = cloth_classifier.state_dict()
+    torch.save(cloth_classifier_parameters, "./saved_model/cloth_classifier_param_50epo.tar")
